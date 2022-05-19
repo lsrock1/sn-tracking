@@ -95,6 +95,10 @@ def make_txt():
     trackers = []
     frame_num = 1
     prev_name = ''
+    no_c = 0
+    no_m = 0
+    if not os.path.exists('results'):
+        os.mkdir('results')
     # r = defaultdict(list)
     for idx, (names, target, index) in enumerate(dataloader):
         names = names.cuda()
@@ -117,22 +121,29 @@ def make_txt():
             movement_boxes = compute_movements(v, current_boxes)
 
             img_path = data.get_img(i.item())[1].replace('tracking', 'infer')
-            if img_path.split('/')[-3] != prev_name:
+            # print(img_path)
+            if not os.path.exists(os.path.dirname(img_path)):
+                os.makedirs(os.path.dirname(img_path))
+            fname = img_path.split('/')[-3]
+            if fname != prev_name:
                 if prev_name != '':
-                    txt_path = '/'.join(img_path.split('/')[:-2])
-                    write_results(txt_path + 'results.txt', trackers)
-                    print('write results to {}'.format(txt_path + 'results.txt'))
+                    txt_path = '/'.join(img_path.split('/')[:-2]).replace(fname, prev_name)
+                    write_results('results/' + prev_name + '.txt', trackers)
+                    print('write results to {}'.format('results/' + prev_name + '.txt'))
+                    print(no_c)
+                    print(no_m)
+                    # return
                 prev_name = img_path.split('/')[-3]
                 trackers = []
                 trackers += [[[1] + b.tolist() + [bid]] for bid, b in enumerate(current_boxes)]
-                frame_num = 1
-
+                frame_num = 2
+            # print(frame_num)
             moved_boxes = current_boxes + movement_boxes
             iou = IOU(moved_boxes, next_boxes)
-            iou_mask = iou > 0.1
+            iou_mask = iou > 0.4
             iou = iou * iou_mask
             matched_indices = linear_assignment(-iou)
-            
+            # print(matched_indices)
             unmatched_detections = []
             for d, det in enumerate(next_boxes):
                 if(d not in matched_indices[:,1]):
@@ -142,6 +153,16 @@ def make_txt():
             for t, tr in enumerate(current_boxes):
                 if(t not in matched_indices[:,0]):
                     unmatched_trackers.append(t)
+
+            matches = []
+            for m in matched_indices:
+                if(iou[m[0], m[1]]< 0.4):
+                    unmatched_detections.append(m[1])
+                    unmatched_trackers.append(m[0])
+                else:
+                    matches.append(m.reshape(1,2))
+            matched_indices = np.concatenate(matches, axis=0)
+            # print(matched_indices)
 
             additional_matched_indices = []
             for tr_num in unmatched_trackers:
@@ -158,9 +179,10 @@ def make_txt():
                     intersection = np.minimum(tr_size, d_size)
                     intersection_area = intersection[0] * intersection[1]
                     iou_ = intersection_area / (tr_area + d_area - intersection_area)
-                    if (tr_mv == real_mv).all() and iou_ > 0.7:
-                        additional_matched_indices.append([tr, d])
+                    if (tr_mv == real_mv).any() or iou_ > 0.7:
+                        additional_matched_indices.append([tr_num, d_num])
             # print(additional_matched_indices)
+            # print(np.array(additional_matched_indices).shape)
             if len(additional_matched_indices) > 0:
                 matched_indices = np.concatenate([
                     matched_indices,
@@ -186,7 +208,12 @@ def make_txt():
             
             for det in unmatched_detections:
                 trackers.append([[frame_num] + next_boxes[det].tolist() + [det]])
-
+            no_c += len(unmatched_detections)
+            no_m += len(unmatched_trackers)
+            # print(trackers)
+            # print(len(trackers))
+            # print('unmatched detections: {}'.format(len(unmatched_detections)))
+            # print('unmatched trackers: {}'.format(len(unmatched_trackers)))
 
 @torch.no_grad()
 def main():
