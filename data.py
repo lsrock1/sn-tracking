@@ -105,10 +105,12 @@ class Test(Dataset):
     def get_box(self, index):
         target1, target2 = self.targets[index]
         target1 = sorted(target1.items(), key=lambda x: x[1][1] + x[1][3], reverse=True)
+        target2 = sorted(target2.items(), key=lambda x: x[1][1] + x[1][3], reverse=True)
+
         return target1, target2
 
     def get_img(self, index):
-        return self.data[index][0]
+        return self.data[index][0], self.data[index][1]
 
     def __len__(self):
         return len(self.data)
