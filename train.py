@@ -9,7 +9,7 @@ def main():
     model = get_model()
     epochs = 100
     batch_size = 8
-    lr = 0.0001
+    lr = 0.001
     wd = 0.00002
     model.cuda()
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)

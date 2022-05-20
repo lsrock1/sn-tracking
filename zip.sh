@@ -1,0 +1,1 @@
+zip results/soccernet_mot_results.zip results/SNMOT-???.txt
