@@ -17,16 +17,22 @@ from PIL import ImageColor
 def ball_processing(trackers):
     trackers_ = [np.array(t) for t in trackers]
     # w, h
-    trackers_ball_candidate = [np.stack([t[:, 3] - t[:, 1], t[:, 4] - t[:, 2]], axis=1).mean(axis=0) for t in trackers_]
-    trackers_ball_candidate = [(t < 40).all() for t in trackers_ball_candidate]
-    trackers_ball_condidate_idx = [i for i, t in enumerate(trackers_ball_candidate) if t]
+    trackers_ball_candidate = [np.stack([t[:, 3] - t[:, 1], t[:, 4] - t[:, 2]], axis=1) for t in trackers_]
+    trackers_ball_counts = [t.shape[0] for t in trackers_ball_candidate]
+    trackers_ball_candidate = [(t.mean(axis=0) < 25).all() for t in trackers_ball_candidate]
+    trackers_ball_condidate_idx = [i for i, t in enumerate(trackers_ball_candidate) if t and trackers_ball_counts[i] > 1]
+    
+    # print(trackers_ball_condidate_idx)
     trackers_frame_num = [t[[0,-1], [0, 0]] for t in trackers_]
+    # print(np.array(trackers_frame_num)[trackers_ball_condidate_idx])
     
     balls = []
+    # print(trackers_frame_num)
     for i in trackers_ball_condidate_idx:
         for j in trackers_ball_condidate_idx:
             if i == j:
                 continue
+            # print('i: ', trackers_frame_num[i][1], 'j: ', trackers_frame_num[j][1])
             if trackers_frame_num[i][1] < trackers_frame_num[j][0] and trackers_frame_num[j][0] - trackers_frame_num[i][1] == 1:
                 balls.append(i)
                 balls.append(j)
@@ -34,12 +40,14 @@ def ball_processing(trackers):
                 balls.append(i)
                 balls.append(j)
     balls = list(set(balls))
+    # print(balls)
     new_trackers = []
     balls = []
     for i in range(len(trackers_)):
         if i in balls:
             balls += trackers[i]
-        new_trackers.append(trackers[i])
+        else:
+            new_trackers.append(trackers[i])
     new_trackers.append(balls)
     return new_trackers
 
@@ -168,6 +176,7 @@ def make_txt(save_img=False):
             fname = img_path.split('/')[-3]
             if fname != prev_name:
                 if prev_name != '':
+                    trackers = ball_processing(trackers)
                     txt_path = '/'.join(img_path.split('/')[:-2]).replace(fname, prev_name)
                     write_results('results/' + prev_name + '.txt', trackers)
                     print('write results to {}'.format('results/' + prev_name + '.txt'))
@@ -473,5 +482,5 @@ def tmp():
 
 if __name__ == '__main__':
     # main()
-    make_txt(True)
+    make_txt()
     # tmp()
