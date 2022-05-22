@@ -2,6 +2,10 @@ import torchvision
 
 from torch import nn
 import torch
+import torch.nn.functional as F
+
+from collections import OrderedDict
+import copy
 
 
 class Stem(nn.Module):
@@ -25,6 +29,51 @@ class Stem(nn.Module):
             self.compressor2(x[origin_bs:] - x[:origin_bs])
         ], dim=1)
         return x
+
+
+class Model2(nn.Module):
+    def __init__(self, ):
+        super().__init__()
+        model = get_model()
+        self.backbone = model.backbone
+        self.classifier = model.classifier
+        # copy aspp
+        self.re_id = copy.deepcopy(self.classifier[0])
+        self.weight = nn.Parameter(torch.randn(1, 1, 256, 1, 1))
+
+    def reid_run(self, x, kernel):
+        # bs, n+1, c, 1, 1
+        w = self.weight.expand(kernel.shape[0], 1, -1, -1, -1)
+        kernel = torch.cat([w, kernel], dim=1)
+
+        batch, n, channel = kernel.shape[:3]
+        x = x.transpose(0, 1)
+        x = x.view(1, channel*batch, x.size(2), x.size(3))  # 1 * (b*c) * k * k
+        kernel = kernel.view(batch*n, channel, kernel.size(2), kernel.size(3))  # (b*c) * 1 * H * W
+        out = F.conv2d(x, kernel, groups=batch)
+        out = out.view(batch, n, out.size(2), out.size(3))
+        return out
+
+    def forward(self, x):
+        input_shape = x.shape[-2:]
+        # contract: features is a dict of tensors
+        features = self.backbone(x)
+
+        result = OrderedDict()
+        x = features["out"]
+        x = self.classifier(x)
+        x = F.interpolate(x, size=input_shape, mode="bilinear", align_corners=False)
+        result["out"] = x
+        x = self.re_id(features["out"])
+        x = F.interpolate(x, size=input_shape, mode="bilinear", align_corners=False)
+
+        result['feat'] = x
+        return x
+
+
+def get_modelv2():
+    m = Model2()
+    return m
 
 
 def get_model():
