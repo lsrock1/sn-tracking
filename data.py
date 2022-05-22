@@ -168,13 +168,14 @@ class Challenge(Dataset):
             img2 = self.transform(img2)
         img = torch.cat([img1, img2], dim=0)
 
-        return img, None, index
+        return img, torch.zeros(1), index
 
     def get_box(self, index):
         target1, target2 = self.targets[index]
         target1 = sorted(target1, key=lambda x: x[1] + x[3], reverse=True)
+        target1 = [[0, t] for t in target1]
         target2 = sorted(target2, key=lambda x: x[1] + x[3], reverse=True)
-
+        target2 = [[0, t] for t in target2]
         return target1, target2
 
     def get_img(self, index):

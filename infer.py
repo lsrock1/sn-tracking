@@ -29,19 +29,24 @@ def ball_processing(trackers):
     trackers_ball_condidate_idx = sorted(trackers_ball_condidate_idx, key=lambda i: trackers_ball_counts[i], reverse=True)
     
     balls = [trackers_ball_condidate_idx[0]]
-    ball_frame = [trackers_frame_num[balls[0]][0], trackers_frame_num[balls[0]][1]]
+    ball_frame = [[trackers_frame_num[balls[0]][0], trackers_frame_num[balls[0]][1]]]
     trackers_ball_condidate_idx = trackers_ball_condidate_idx[1:]
 
     for i in trackers_ball_condidate_idx:
         if i in balls: 
             continue
-        if trackers_frame_num[i][0] - ball_frame[1] == 1:
-            # ball + tracker
+        if all(
+            [(f[1] < trackers_frame_num[i][0] and f[1] < trackers_frame_num[i][1]) or (f[0] > trackers_frame_num[i][0] and f[0] > trackers_frame_num[i][1]) for f in ball_frame]):
+            ball_frame.append(trackers_frame_num[i])
             balls.append(i)
-            ball_frame[1] = trackers_frame_num[i][1]
-        elif ball_frame[0] - trackers_frame_num[i][1] == 1:
-            balls.append(i)
-            ball_frame[0] = trackers_frame_num[i][0]
+
+        # if trackers_frame_num[i][0] - ball_frame[1] == 1:
+        #     # ball + tracker
+        #     balls.append(i)
+        #     ball_frame[1] = trackers_frame_num[i][1]
+        # elif ball_frame[0] - trackers_frame_num[i][1] == 1:
+        #     balls.append(i)
+        #     ball_frame[0] = trackers_frame_num[i][0]
     # for i in trackers_ball_condidate_idx:
     #     for j in trackers_ball_condidate_idx:
     #         if i == j:
@@ -140,14 +145,19 @@ def compute_movements(v, current_boxes):
 
 
 @torch.no_grad()
-def make_txt(save_img=False):
+def make_txt(save_img=False, challenge=False):
     model = VTraining()
-    model = model.load_from_checkpoint("lightning_logs/version_2/checkpoints/epoch=20-step=49812.ckpt", map_location="cuda")
+    model = model.load_from_checkpoint("lightning_logs/version_2/checkpoints/epoch=22-step=54556.ckpt", map_location="cuda")
     # model = get_model()
     model.cuda()
     model.eval()
     model.freeze()
-    data = Test()
+    if not challenge:
+        data = Test()
+        folder_name = 'results'
+    else:
+        data = Challenge()
+        folder_name = 'challenge_results'
     batch_size = 8
     dataloader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=False, num_workers=8)
 
@@ -156,8 +166,8 @@ def make_txt(save_img=False):
     prev_name = ''
     no_c = 0
     no_m = 0
-    if not os.path.exists('results'):
-        os.mkdir('results')
+    if not os.path.exists(folder_name):
+        os.mkdir(folder_name)
     # r = defaultdict(list)
     # color rgb list
     get_colors = lambda n: list(map(lambda i: "#" + "%06x" % random.randint(0, 0xFFFFFF),range(n)))
@@ -166,7 +176,7 @@ def make_txt(save_img=False):
 
     for idx, (names, target, index) in enumerate(dataloader):
         names = names.cuda()
-        target = target.cuda()
+        # target = target.cuda()
         vectors = model(names)['out']
         vectors = F.interpolate(vectors, size=(1080, 1920), mode='bilinear', align_corners=True)
         # print(vectors.shape)
@@ -196,12 +206,12 @@ def make_txt(save_img=False):
             fname = img_path.split('/')[-3]
             if fname != prev_name:
                 if prev_name != '':
-                    np.save(os.path.join('results', prev_name + '.npy'), np.array(trackers))
+                    np.save(os.path.join(folder_name, prev_name + '.npy'), np.array(trackers))
                     trackers = ball_processing(trackers)
                     
                     txt_path = '/'.join(img_path.split('/')[:-2]).replace(fname, prev_name)
-                    write_results('results/' + prev_name + '.txt', trackers)
-                    print('write results to {}'.format('results/' + prev_name + '.txt'))
+                    write_results(f'{folder_name}/' + prev_name + '.txt', trackers)
+                    print('write results to {}'.format(f'{folder_name}/' + prev_name + '.txt'))
                     print(no_c)
                     print(no_m)
                     no_c = 0
@@ -326,190 +336,14 @@ def make_txt(save_img=False):
             no_m += len(unmatched_trackers)
             if save_img:
                 cv2.imwrite(img_path, img)
-    np.save(os.path.join('results', prev_name + '.npy'), np.array(trackers))
-    write_results('results/' + prev_name + '.txt', trackers)
-    print('write results to {}'.format('results/' + prev_name + '.txt'))
+    np.save(os.path.join(folder_name, prev_name + '.npy'), np.array(trackers))
+    trackers = ball_processing(trackers)
+    write_results(f'{folder_name}/' + prev_name + '.txt', trackers)
+    print('write results to {}'.format(f'{folder_name}/' + prev_name + '.txt'))
             # print(trackers)
             # print(len(trackers))
             # print('unmatched detections: {}'.format(len(unmatched_detections)))
             # print('unmatched trackers: {}'.format(len(unmatched_trackers)))
-
-@torch.no_grad()
-def make_challenge(save_img=False):
-    model = get_model()
-    model.cuda()
-    model.eval()
-    model.load_state_dict(torch.load('model2.pt'))
-    data = Challenge()
-    batch_size = 8
-    dataloader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=False, num_workers=8)
-
-    trackers = []
-    frame_num = 1
-    prev_name = ''
-    no_c = 0
-    no_m = 0
-    if not os.path.exists('results_challenge'):
-        os.mkdir('results_challenge')
-    # r = defaultdict(list)
-    # color rgb list
-    get_colors = lambda n: list(map(lambda i: "#" + "%06x" % random.randint(0, 0xFFFFFF),range(n)))
-    colors = get_colors(300)
-    colors = [ImageColor.getcolor(c, "RGB") for c in colors]
-
-    for idx, (names, target, index) in enumerate(dataloader):
-        names = names.cuda()
-        target = target.cuda()
-        vectors = model(names)['out']
-        vectors = F.interpolate(vectors, size=(1080, 1920), mode='bilinear', align_corners=True)
-        # print(vectors.shape)
-        
-        for v, i in zip(vectors, index):
-            frame_num += 1
-            current, next_ = data.get_box(i.item())
-            current_boxes = [b[1] for b in current]
-            current_boxes = [[b[0], b[1], b[0]+b[2], b[1]+b[3]] for b in current_boxes]
-            current_boxes = np.array(current_boxes)
-
-            next_boxes = [b[1] for b in next_]
-            next_boxes = [[b[0], b[1], b[0]+b[2], b[1]+b[3]] for b in next_boxes]
-            next_boxes = np.array(next_boxes)
-            
-            movement_boxes = compute_movements(v, current_boxes)
-
-            oimg_path = data.get_img(i.item())[1]
-            img_path = oimg_path.replace('tracking', 'infer')
-            if save_img:
-                img = cv2.imread(oimg_path)
-            # if '-198' not in img_path: continue
-            # print(img_path)
-            if not os.path.exists(os.path.dirname(img_path)):
-                os.makedirs(os.path.dirname(img_path))
-            fname = img_path.split('/')[-3]
-            if fname != prev_name:
-                if prev_name != '':
-                    txt_path = '/'.join(img_path.split('/')[:-2]).replace(fname, prev_name)
-                    write_results('results_challenge/' + prev_name + '.txt', trackers)
-                    print('write results to {}'.format('results_challenge/' + prev_name + '.txt'))
-                    print(no_c)
-                    print(no_m)
-                    no_c = 0
-                    no_m = 0
-                    # return
-                prev_name = img_path.split('/')[-3]
-                trackers = []
-                trackers += [[[1] + b.tolist() + [bid]] for bid, b in enumerate(current_boxes)]
-                frame_num = 2
-                
-            # print(frame_num)
-            moved_boxes = current_boxes + movement_boxes
-
-            moved_boxes[:, [0, 2]] = np.clip(moved_boxes[:, [0, 2]], 0, 1919)
-            moved_boxes[:, [1, 3]] = np.clip(moved_boxes[:, [1, 3]], 0, 1079)
-
-
-            iou = IOU(moved_boxes, next_boxes)
-            iou_mask = iou > 0.0
-            iou = iou * iou_mask
-            matched_indices = linear_assignment(-iou)
-            # print(matched_indices)
-            unmatched_detections = []
-            for d, det in enumerate(next_boxes):
-                if(d not in matched_indices[:,1]):
-                    unmatched_detections.append(d)
-
-            unmatched_trackers = []
-            for t, tr in enumerate(current_boxes):
-                if(t not in matched_indices[:,0]):
-                    unmatched_trackers.append(t)
-
-            matches = []
-            for m in matched_indices:
-                if(iou[m[0], m[1]]<= 0.0):
-                    unmatched_detections.append(m[1])
-                    unmatched_trackers.append(m[0])
-                else:
-                    matches.append(m.reshape(1,2))
-            
-            if len(matches) == 0:
-                matched_indices = np.empty((0,2), dtype=int)
-            else:
-                matched_indices = np.concatenate(matches, axis=0)
-            # print(matched_indices)
-
-            # additional_matched_indices = []
-            unmatched_iou = np.zeros((len(unmatched_trackers), len(unmatched_detections)))
-            unmatched_vector = np.zeros((len(unmatched_trackers), len(unmatched_detections)))
-
-            for t_idx, tr_num in enumerate(unmatched_trackers):
-                tr_mv = movement_boxes[tr_num, :2] > 0
-                tr = current_boxes[tr_num, :2]
-                tr_size = current_boxes[tr_num, 2:] - current_boxes[tr_num, :2]
-                for d_idx, d_num in enumerate(unmatched_detections):
-                    d = next_boxes[d_num, :2]
-                    d_size = next_boxes[d_num, 2:] - next_boxes[d_num, :2]
-                    real_mv = (d - tr) > 0
-
-                    tr_area = tr_size[0] * tr_size[1]
-                    d_area = d_size[0] * d_size[1]
-                    intersection = np.minimum(tr_size, d_size)
-                    intersection_area = intersection[0] * intersection[1]
-                    iou_ = intersection_area / (tr_area + d_area - intersection_area)
-                    unmatched_iou[t_idx, d_idx] = iou_
-                    unmatched_vector[t_idx, d_idx] = (tr_mv == real_mv).sum()
-            
-            additional_matched_indices = linear_assignment(-unmatched_iou)
-            amatches = []
-            for m in additional_matched_indices:
-                if(unmatched_vector[m[0], m[1]] > 0):
-                    amatches.append([unmatched_trackers[m[0]], unmatched_detections[m[1]]])
-            additional_matched_indices = np.array(amatches)
-            
-                    # if (tr_mv == real_mv).any() and iou_ > 0.7:
-                    #  and (len(additional_matched_indices) == 0 or (tr_num not in np.array(additional_matched_indices)[:, 0] and d_num not in np.array(additional_matched_indices)[:, 1])):
-                        # additional_matched_indices.append([tr_num, d_num])
-                        # break
-            
-            # print(additional_matched_indices)
-            # print(np.array(additional_matched_indices).shape)
-            if len(additional_matched_indices) > 0:
-                matched_indices = np.concatenate([
-                    matched_indices,
-                    additional_matched_indices], axis=0)
-
-            unmatched_detections = []
-            for d, det in enumerate(next_boxes):
-                if(d not in matched_indices[:,1]):
-                    unmatched_detections.append(d)
-
-            unmatched_trackers = []
-            for t, tr in enumerate(current_boxes):
-                if(t not in matched_indices[:,0]):
-                    unmatched_trackers.append(t)
-
-            matched_indices = dict([(i[0], i[1]) for i in matched_indices])
-
-            for idx in range(len(trackers)):
-                trk = trackers[idx][-1]
-                if trk[0] == (frame_num - 1) and trk[-1] in matched_indices:
-                    selected_box = next_boxes[matched_indices[trk[-1]]].tolist()
-                    trackers[idx].append(
-                        [frame_num] + selected_box + [matched_indices[trk[-1]]])
-                    if save_img:                    
-                        img = cv2.rectangle(img, (selected_box[0], selected_box[1]), (selected_box[2], selected_box[3]), colors[idx], 4)
-            
-            for det in unmatched_detections:
-                selected_box = next_boxes[det].tolist()
-                trackers.append([[frame_num] + selected_box + [det]])
-                if save_img:                    
-                    img = cv2.rectangle(img, (selected_box[0], selected_box[1]), (selected_box[2], selected_box[3]), colors[len(trackers)], 4)
-            no_c += len(unmatched_detections)
-            no_m += len(unmatched_trackers)
-            if save_img:
-                cv2.imwrite(img_path, img)
-    
-    write_results('results_challenge/' + prev_name + '.txt', trackers)
-    print('write results to {}'.format('results_challenge/' + prev_name + '.txt'))
 
         
 def tmp():
@@ -535,5 +369,5 @@ def tmp():
 
 if __name__ == '__main__':
     # main()
-    make_txt(True)
+    make_txt(False, False)
     # tmp()
