@@ -58,6 +58,7 @@ class VTraining(pl.LightningModule):
     def __init__(self):
         super().__init__()
         self.model = get_model()
+        self.weight = 5
 
     def forward(self, image, ):
         return self.model(image)
@@ -65,7 +66,9 @@ class VTraining(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         image, target = batch
         pred = self.model(image)['out']
-        loss = F.mse_loss(pred, target)
+        loss = F.mse_loss(pred, target, reduction='none')
+        loss = loss[target != 0].sum() * self.weight + loss[target == 0].sum()
+        loss = loss / target.numel()
         self.log("train_loss", loss, prog_bar=True)
         # self.log("train_accuracy", accuracy, prog_bar=True)
         return loss

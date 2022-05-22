@@ -54,7 +54,7 @@ class Train(Dataset):
         img = torch.cat([img1, img2], dim=0)
         if random.random() > 0.5:
             img = torch.flip(img, dims=[2])
-            target = torch.flip(target, dims=[2])
+            target = torch.flip(target, dims=[1])
             target[:, :, 0] = - target[:, :, 0]
         return img, target.permute(2, 0, 1)
 

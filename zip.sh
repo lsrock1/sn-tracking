@@ -1,1 +1,2 @@
-zip results/soccernet_mot_results.zip results/SNMOT-???.txt
+cd results
+zip soccernet_mot_results.zip SNMOT-???.txt
