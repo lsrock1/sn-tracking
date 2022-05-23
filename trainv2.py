@@ -38,7 +38,7 @@ class V2Training(pl.LightningModule):
             feat2_vec.append((feat2 * mask).sum(dim=[2, 3], keepdim=True) / mask.sum(dim=[2, 3],keepdim=True))
         feat2_vec = torch.stack(feat2_vec, dim=1)
         # bs, n, c, 1, 1
-        feat_vec = torch.cat([feat1_vec, feat2_vec], dim=1)
+        feat_vec = torch.cat([feat1_vec, feat2_vec], dim=0)
         re_id = model.reid_run(feat, feat_vec)
         loss = F.mse_loss(pred, target, reduction='none')
         loss = loss[target != 0].sum() * self.weight + loss[target == 0].sum()

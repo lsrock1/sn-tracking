@@ -147,7 +147,7 @@ def compute_movements(v, current_boxes):
 @torch.no_grad()
 def make_txt(save_img=False, challenge=False):
     model = VTraining()
-    model = model.load_from_checkpoint("lightning_logs/version_2/checkpoints/epoch=22-step=54556.ckpt", map_location="cuda")
+    model = model.load_from_checkpoint("lightning_logs/version_2/checkpoints/epoch=31-step=75904.ckpt", map_location="cuda")
     # model = get_model()
     model.cuda()
     model.eval()
