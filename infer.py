@@ -132,7 +132,7 @@ def make_txt(save_img=False, challenge=False, v2=False):
     device = 'cpu'
     if v2:
         model = V2Training()
-        model = model.load_from_checkpoint("lightning_logs/version_1/checkpoints/epoch=0-step=4744.ckpt", map_location=device)
+        model = model.load_from_checkpoint("lightning_logs/version_1/checkpoints/epoch=1-step=9488.ckpt", map_location=device)
     else:
         model = VTraining()
         model = model.load_from_checkpoint("lightning_logs/version_1/checkpoints/epoch=0-step=4744.ckpt", map_location=device)
@@ -249,7 +249,10 @@ def make_txt(save_img=False, challenge=False, v2=False):
                 for t, tr in enumerate(trackers):
                     # tracker's frame number check 
                     # print(tr[-1][0], frame_num)
-                    if tr[-1][0] < frame_num - 1:
+                    if all([(t[3] - t[1] < 35) and (t[4] - t[2] < 35) for t in tr]):
+                        # pass ball box
+                        pass
+                    elif tr[-1][0] < frame_num - 1 and len(tr) >= 5:
                         deactivated_trackers_ids.append(t)
                         deactivated_trackers_features.append(features[t][len(features[t])//2])
                         deactivated_trackers_frames.append(tr[-1][0])
@@ -268,6 +271,7 @@ def make_txt(save_img=False, challenge=False, v2=False):
                     re_id_matching = []
                     for c, box in enumerate(unmatched_trackers_boxes):
                         matching = F.softmax(reid_map[0, :, box[1]:box[3], box[0]:box[2]], dim=0).mean(dim=[1, 2]).numpy()
+                        print(matching)
                         max_value = np.max(matching)
                         max_index = np.argmax(matching)
                         print(max_index, max_value)
@@ -362,7 +366,7 @@ def make_txt(save_img=False, challenge=False, v2=False):
                         features[idx].append(
                             outputs['feat'][batch_idx:batch_idx+1, :, selected_box[1]:selected_box[3], selected_box[0]:selected_box[2]].mean(dim=[2, 3], keepdim=True).cpu())
                     if save_img:                    
-                        img = cv2.rectangle(img, (selected_box[0], selected_box[1]), (selected_box[2], selected_box[3]), colors[idx], 1)
+                        img = cv2.rectangle(img, (selected_box[0], selected_box[1]), (selected_box[2], selected_box[3]), colors[idx], 5)
                 # else:
                 #     deactivated_trackers_idxs.append(idx)
                 #     deactivated_trackers_feat.append(features[idx][len(trackers[idx])//2])
@@ -373,7 +377,7 @@ def make_txt(save_img=False, challenge=False, v2=False):
                 if 'feat' in outputs:
                     features.append([outputs['feat'][batch_idx:batch_idx+1, :, selected_box[1]:selected_box[3], selected_box[0]:selected_box[2]].mean(dim=[2, 3], keepdim=True).cpu()])
                 if save_img:                    
-                    img = cv2.rectangle(img, (selected_box[0], selected_box[1]), (selected_box[2], selected_box[3]), colors[len(trackers)-1], 1)
+                    img = cv2.rectangle(img, (selected_box[0], selected_box[1]), (selected_box[2], selected_box[3]), colors[len(trackers)-1], 5)
             
             print('='*5)
             for i in trackers:
