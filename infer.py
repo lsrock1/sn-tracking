@@ -40,24 +40,6 @@ def ball_processing(trackers):
             ball_frame.append(trackers_frame_num[i])
             balls.append(i)
 
-        # if trackers_frame_num[i][0] - ball_frame[1] == 1:
-        #     # ball + tracker
-        #     balls.append(i)
-        #     ball_frame[1] = trackers_frame_num[i][1]
-        # elif ball_frame[0] - trackers_frame_num[i][1] == 1:
-        #     balls.append(i)
-        #     ball_frame[0] = trackers_frame_num[i][0]
-    # for i in trackers_ball_condidate_idx:
-    #     for j in trackers_ball_condidate_idx:
-    #         if i == j:
-    #             continue
-    #         # print('i: ', trackers_frame_num[i][1], 'j: ', trackers_frame_num[j][1])
-    #         if trackers_frame_num[i][1] < trackers_frame_num[j][0] and trackers_frame_num[j][0] - trackers_frame_num[i][1] == 1:
-    #             balls.append(i)
-    #             balls.append(j)
-    #         elif trackers_frame_num[i][0] > trackers_frame_num[j][1] and trackers_frame_num[i][0] - trackers_frame_num[j][1] == 1:
-    #             balls.append(i)
-    #             balls.append(j)
     balls = list(set(balls))
     balls = sorted(balls, key=lambda x: trackers_frame_num[x][0])
     # print(balls)
@@ -147,7 +129,7 @@ def compute_movements(v, current_boxes):
 @torch.no_grad()
 def make_txt(save_img=False, challenge=False):
     model = VTraining()
-    model = model.load_from_checkpoint("lightning_logs/version_2/checkpoints/epoch=31-step=75904.ckpt", map_location="cuda")
+    model = model.load_from_checkpoint("saved_32/version_2/checkpoints/epoch=31-step=75904.ckpt", map_location="cuda")
     # model = get_model()
     model.cuda()
     model.eval()
@@ -162,6 +144,7 @@ def make_txt(save_img=False, challenge=False):
     dataloader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=False, num_workers=8)
 
     trackers = []
+    features = []
     frame_num = 1
     prev_name = ''
     no_c = 0
@@ -177,11 +160,12 @@ def make_txt(save_img=False, challenge=False):
     for idx, (names, target, index) in enumerate(dataloader):
         names = names.cuda()
         # target = target.cuda()
-        vectors = model(names)['out']
+        outputs = model(names)
+        vectors = outputs['out']
         vectors = F.interpolate(vectors, size=(1080, 1920), mode='bilinear', align_corners=True)
         # print(vectors.shape)
         
-        for v, i in zip(vectors, index):
+        for batch_idx, (v, i) in enumerate(zip(vectors, index)):
             frame_num += 1
             current, next_ = data.get_box(i.item())
             current_boxes = [b[1] for b in current]
@@ -219,8 +203,11 @@ def make_txt(save_img=False, challenge=False):
                     # return
                 prev_name = img_path.split('/')[-3]
                 trackers = []
+                features = []
                 trackers += [[[1] + b.tolist() + [bid]] for bid, b in enumerate(current_boxes)]
                 frame_num = 2
+                if 'feat' in outputs:
+                    features += [[outputs['feat'][batch_idx:batch_idx+1, :, b[1]:b[3], b[0]:b[2]].mean(dim=[2, 3], keepdim=True).cpu()] for bid, b in enumerate(current_boxes)]
             
             moved_boxes = current_boxes + movement_boxes
 
@@ -237,6 +224,47 @@ def make_txt(save_img=False, challenge=False):
             unmatched_detections = []
             unmatched_trackers = []
 
+            
+
+            # prev matching reorder by re-id
+            if 'feat' in outputs and frame_num > 2:
+                deactivated_trackers_ids = []
+                unmatched_trackers_ids = []
+                deactivated_trackers_features = []
+                unmatched_trackers_boxes = []
+                deactivated_trackers_frames = []
+                unmatched_trackers_frames = []
+                for t, tr in enumerate(trackers):
+                    # tracker's frame number check 
+                    if tr[-1][0] < frame_num - 1:
+                        deactivated_trackers_ids.append(t)
+                        deactivated_trackers_features.append(features[t][len(features[t])//2])
+                        deactivated_trackers_frames.append(tr[-1][0])
+                    # at least 5 frames
+                    elif tr[-1][0] == frame_num - 1 and len(tr) == 5:
+                        unmatched_trackers_ids.append(t)
+                        unmatched_trackers_boxes.append(tr[-1][1:-1])
+                        unmatched_trackers_frames.append(tr[-1][0])
+                        # unmatched_trackers_features.append(features[t][len(features[t])//2])
+                reid_map = model.reid_run(outputs['feat'], torch.stack(deactivated_trackers_features, dim=1).cuda())
+                reid_map = reid_map.cpu()
+
+                re_id_matching = []
+                for c, box in enumerate(unmatched_trackers_boxes):
+                    matching = F.softmax(reid_map[0, :, box[1]:box[3], box[0]:box[2]], dim=0).mean(dim=[1, 2]).numpy()
+                    max_value = np.max(matching)
+                    max_index = np.argmax(matching)
+                    if max_index != 0 and max_value > 0.8 and deactivated_trackers_frames[max_index-1] < unmatched_trackers_frames[c]:
+                        re_id_matching.append([max_index-1, c])
+                
+                for m in re_id_matching:
+                    tracker_id = deactivated_trackers_ids[m[0]]
+                    box_id = unmatched_trackers_ids[m[1]]
+                    trackers[tracker_id] = trackers[tracker_id] + trackers[box_id]
+                    trackers[box_id] = []
+                trackers = [tr for tr in trackers if len(tr) > 0]
+
+            # IOU based matching
             matches = []
             for m in matched_indices:
                 if(iou[m[0], m[1]]<= 0.):
@@ -244,16 +272,6 @@ def make_txt(save_img=False, challenge=False):
                     unmatched_trackers.append(m[0])
                 else:
                     matches.append(m.reshape(1,2))
-            
-            # if img_num == 109:
-            # print(current_boxes)
-            # print(moved_boxes)
-            # print(next_boxes)
-            # print(matched_indices)
-            # print(iou)
-            #     print(unmatched_trackers)
-            #     print(unmatched_detections)
-            # elif img_num == 110: return
 
             if len(matches) == 0:
                 matched_indices = np.empty((0,2), dtype=int)
@@ -264,6 +282,7 @@ def make_txt(save_img=False, challenge=False):
             unmatched_iou = np.zeros((len(unmatched_trackers), len(unmatched_detections)))
             unmatched_vector = np.zeros((len(unmatched_trackers), len(unmatched_detections)))
             
+            # Movement based matching
             if len(unmatched_trackers) > 0 and len(unmatched_detections) > 0:
                 for t_idx, tr_num in enumerate(unmatched_trackers):
                     tr_mv = movement_boxes[tr_num, :2] > 0
@@ -298,8 +317,7 @@ def make_txt(save_img=False, challenge=False):
                 additional_matched_indices = np.array(amatches)
             else:
                 additional_matched_indices = np.empty((0,2), dtype=int)
-            # print(additional_matched_indices)
-            # print(np.array(additional_matched_indices).shape)
+
             if len(additional_matched_indices) > 0:
                 matched_indices = np.concatenate([
                     matched_indices,
@@ -323,12 +341,20 @@ def make_txt(save_img=False, challenge=False):
                     selected_box = next_boxes[matched_indices[trk[-1]]].tolist()
                     trackers[idx].append(
                         [frame_num] + selected_box + [matched_indices[trk[-1]]])
+                    if 'feat' in outputs:
+                        features[idx].append(
+                            outputs['feat'][batch_idx:batch_idx+1, :, selected_box[1]:selected_box[3], selected_box[0]:selected_box[2]].mean(dim=[2, 3], keepdim=True).cpu())
                     if save_img:                    
                         img = cv2.rectangle(img, (selected_box[0], selected_box[1]), (selected_box[2], selected_box[3]), colors[idx], 1)
-            
+                # else:
+                #     deactivated_trackers_idxs.append(idx)
+                #     deactivated_trackers_feat.append(features[idx][len(trackers[idx])//2])
+
             for det in unmatched_detections:
                 selected_box = next_boxes[det].tolist()
                 trackers.append([[frame_num] + selected_box + [det]])
+                if 'feat' in outputs:
+                    features.append([[outputs['feat'][batch_idx:batch_idx+1, :, selected_box[1]:selected_box[3], selected_box[0]:selected_box[2]].mean(dim=[2, 3], keepdim=True).cpu()]])
                 if save_img:                    
                     img = cv2.rectangle(img, (selected_box[0], selected_box[1]), (selected_box[2], selected_box[3]), colors[len(trackers)-1], 1)
             
@@ -369,5 +395,5 @@ def tmp():
 
 if __name__ == '__main__':
     # main()
-    make_txt(False, False)
+    make_txt(False, True)
     # tmp()

@@ -235,8 +235,8 @@ class TrainV2(Dataset):
 
         img3, img4 = self.data[selected_idx]
         target3, target4 = self.targets[selected_idx]
-        img3 = Image.open(img1).convert('RGB')
-        img4 = Image.open(img2).convert('RGB')
+        img3 = Image.open(img3).convert('RGB')
+        img4 = Image.open(img4).convert('RGB')
         target3 = sorted(target3.items(), key=lambda x: x[1][1] + x[1][3], reverse=True)
         target_ = torch.zeros(self.size + [2]).float()
         for track, box in target3:
@@ -291,6 +291,10 @@ class TrainV2(Dataset):
             img2 = torch.flip(img2, dims=[2])
             target_ = torch.flip(target_, dims=[1])
             target_[:, :, 0] = - target_[:, :, 0]
+            target_reid1 = torch.flip(target_reid1, dims=[1])
+            target_reid2 = torch.flip(target_reid2, dims=[1])
+            target1_boxes = torch.flip(target1_boxes, dims=[2])
+            target3_boxes = torch.flip(target3_boxes, dims=[2])
         
         return img, target.permute(2, 0, 1), img2, target_.permute(2, 0, 1), target1_boxes, target3_boxes, target_reid1, target_reid2
 

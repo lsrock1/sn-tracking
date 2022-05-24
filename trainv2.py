@@ -1,5 +1,5 @@
-from data import Train
-from model import get_model
+from data import TrainV2
+from model import get_modelv2
 
 import torch
 import torch.nn.functional as F
@@ -11,7 +11,7 @@ from pytorch_lightning.strategies import DDPStrategy
 class V2Training(pl.LightningModule):
     def __init__(self):
         super().__init__()
-        self.model = get_model()
+        self.model = get_modelv2()
         self.weight = 5
 
     def forward(self, image, ):
@@ -28,22 +28,22 @@ class V2Training(pl.LightningModule):
         for b in range(1,5):
             mask = target1_boxes == b
             # bs, c
-            feat1_vec.append((feat1 * mask).sum(dim=[2, 3], keepdim=True) / mask.sum(dim=[2, 3], keepdim=True))
+            feat1_vec.append((feat1 * mask).sum(dim=[2, 3], keepdim=True) / (mask.sum(dim=[2, 3], keepdim=True) + 1e-8))
         # bs, n, c, 1, 1
         feat1_vec = torch.stack(feat1_vec, dim=1)
         feat2_vec = []
         for b in range(1,5):
             mask = target2_boxes == b
             # bs, c
-            feat2_vec.append((feat2 * mask).sum(dim=[2, 3], keepdim=True) / mask.sum(dim=[2, 3],keepdim=True))
+            feat2_vec.append((feat2 * mask).sum(dim=[2, 3], keepdim=True) / (mask.sum(dim=[2, 3],keepdim=True) + 1e-8))
         feat2_vec = torch.stack(feat2_vec, dim=1)
         # bs, n, c, 1, 1
         feat_vec = torch.cat([feat1_vec, feat2_vec], dim=0)
-        re_id = model.reid_run(feat, feat_vec)
+        re_id = self.model.reid_run(feat, feat_vec)
         loss = F.mse_loss(pred, target, reduction='none')
         loss = loss[target != 0].sum() * self.weight + loss[target == 0].sum()
         loss = loss / target.numel()
-        loss = loss + F.cross_entropy(re_id, torch.cat([target1_reid, target2_reid], dim=0))
+        loss = loss + F.cross_entropy(re_id, torch.cat([target1_reid, target2_reid], dim=0).long())
         self.log("train_loss", loss, prog_bar=True)
         # self.log("train_accuracy", accuracy, prog_bar=True)
         return loss
@@ -55,9 +55,9 @@ class V2Training(pl.LightningModule):
         return optimizer
 
     def train_dataloader(self):
-        data = Train()
+        data = TrainV2()
         # data_test = News('test')
-        dataloader = torch.utils.data.DataLoader(data, batch_size=18, shuffle=True, num_workers=8)
+        dataloader = torch.utils.data.DataLoader(data, batch_size=9, shuffle=True, num_workers=8)
         return dataloader
 
     # def val_dataloader(self):

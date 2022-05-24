@@ -48,10 +48,10 @@ class Model2(nn.Module):
 
         batch, n, channel = kernel.shape[:3]
         x = x.transpose(0, 1)
-        x = x.view(1, channel*batch, x.size(2), x.size(3))  # 1 * (b*c) * k * k
-        kernel = kernel.view(batch*n, channel, kernel.size(2), kernel.size(3))  # (b*c) * 1 * H * W
+        x = x.reshape(1, channel*batch, x.size(2), x.size(3))  # 1 * (b*c) * k * k
+        kernel = kernel.reshape(batch*n, channel, 1, 1)  # (b*c) * 1 * H * W
         out = F.conv2d(x, kernel, groups=batch)
-        out = out.view(batch, n, out.size(2), out.size(3))
+        out = out.reshape(batch, n, out.size(2), out.size(3))
         return out
 
     def forward(self, x):
@@ -68,7 +68,7 @@ class Model2(nn.Module):
         x = F.interpolate(x, size=input_shape, mode="bilinear", align_corners=False)
 
         result['feat'] = x
-        return x
+        return result
 
 
 def get_modelv2():
