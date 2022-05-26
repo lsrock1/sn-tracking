@@ -129,10 +129,10 @@ def compute_movements(v, current_boxes):
 
 @torch.no_grad()
 def make_txt(save_img=False, challenge=False, v2=False):
-    device = 'cpu'
+    device = 'cuda'
     if v2:
         model = V2Training()
-        model = model.load_from_checkpoint("lightning_logs/version_1/checkpoints/epoch=1-step=9488.ckpt", map_location=device)
+        model = model.load_from_checkpoint("lightning_logs/version_1/checkpoints/epoch=8-step=42696.ckpt", map_location=device)
     else:
         model = VTraining()
         model = model.load_from_checkpoint("lightning_logs/version_1/checkpoints/epoch=0-step=4744.ckpt", map_location=device)
@@ -269,16 +269,28 @@ def make_txt(save_img=False, challenge=False, v2=False):
                     reid_map = reid_map.cpu()
 
                     re_id_matching = []
+                    
+                    # frame_check = np.array(deactivated_trackers_frames)[:, None] < np.array(unmatched_trackers_frames)[None, :]
+
                     for c, box in enumerate(unmatched_trackers_boxes):
                         matching = F.softmax(reid_map[0, :, box[1]:box[3], box[0]:box[2]], dim=0).mean(dim=[1, 2]).numpy()
-                        print(matching)
-                        max_value = np.max(matching)
-                        max_index = np.argmax(matching)
-                        print(max_index, max_value)
-                        if max_index > 0 and deactivated_trackers_frames[max_index-1] < unmatched_trackers_frames[c]:
-                            re_id_matching.append([max_index-1, c])
-                    
-                    for m in re_id_matching:
+                        re_id_matching.append(matching)
+                    # box, tracker -> tracker, box
+                    re_id_matching = np.array(re_id_matching).T
+                    # print(len(deactivated_trackers_ids))
+                    # print(len(unmatched_trackers_ids))
+                    # print(re_id_matching.shape)
+                    matched_idx = linear_assignment(-re_id_matching)
+                        # max_value = np.max(matching)
+                        # max_index = np.argmax(matching)
+                        # print(max_index, max_value)
+                        # if max_index > 0 and deactivated_trackers_frames[max_index-1] < unmatched_trackers_frames[c]:
+                        #     re_id_matching.append([max_index-1, c])
+                    filtered_matched_idx = []
+                    for m in matched_idx:
+                        if m[0] > 0 and deactivated_trackers_frames[m[0]-1] < unmatched_trackers_frames[m[1]] and re_id_matching[m[0], m[1]] > 0.2:
+                            filtered_matched_idx.append([m[0]-1, m[1]])
+                    for m in filtered_matched_idx:
                         tracker_id = deactivated_trackers_ids[m[0]]
                         box_id = unmatched_trackers_ids[m[1]]
                         trackers[tracker_id] = trackers[tracker_id] + trackers[box_id]
@@ -379,9 +391,9 @@ def make_txt(save_img=False, challenge=False, v2=False):
                 if save_img:                    
                     img = cv2.rectangle(img, (selected_box[0], selected_box[1]), (selected_box[2], selected_box[3]), colors[len(trackers)-1], 5)
             
-            print('='*5)
-            for i in trackers:
-                print(i[0][0], i[-1][0])
+            # print('='*5)
+            # for i in trackers:
+            #     print(i[0][0], i[-1][0])
 
 
             no_c += len(unmatched_detections)

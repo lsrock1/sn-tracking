@@ -69,6 +69,6 @@ if __name__ == '__main__':
     model = V2Training()
 
     trainer = pl.Trainer(accelerator="dp", gpus=3, num_sanity_val_steps=0, precision=16,
-        enable_checkpointing=True, accumulate_grad_batches=1, sync_batchnorm=True, max_epochs=20)
-        # resume_from_checkpoint="lightning_logs/version_5/checkpoints/epoch=4-step=25050.ckpt")
+        enable_checkpointing=True, accumulate_grad_batches=2, sync_batchnorm=True, max_epochs=20)
+        # resume_from_checkpoint="lightning_logs/version_1/checkpoints/epoch=8-step=42696.ckpt")
     trainer.fit(model=model)

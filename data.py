@@ -249,10 +249,13 @@ class TrainV2(Dataset):
 
         target_reid1 = torch.zeros(self.size).float()
         target3_boxes = torch.zeros([1] + self.size).float()
-        for segid, (track, box) in enumerate(target3[:4]):
+        rand = np.random.choice(len(target3), 4, replace=False)
+        for segid, rand_idx in enumerate(rand):
+            track, box = target3[rand_idx]
             segid = segid + 1
             box = [box[0], box[1], box[0] + box[2], box[1] + box[3]]
-            target3_boxes[0, box[1]:box[3], box[0]:box[2]] = segid
+            xmin, ymin, xmax, ymax = (np.array(box) * self.ratio).astype(int)
+            target3_boxes[0, ymin:ymax, xmin:xmax] = segid
             if track not in target1: continue
             next_track = target1[track]
             box = next_track
@@ -263,10 +266,13 @@ class TrainV2(Dataset):
 
         target_reid2 = torch.zeros(self.size).float()
         target1_boxes = torch.zeros([1] + self.size).float()
-        for segid, (track, box) in enumerate(target1[:4]):
+        rand = np.random.choice(len(target1), 4, replace=False)
+        for segid, rand_idx in enumerate(rand):
+            track, box = target1[rand_idx]
             segid = segid + 1
             box = [box[0], box[1], box[0] + box[2], box[1] + box[3]]
-            target1_boxes[0, box[1]:box[3], box[0]:box[2]] = segid
+            xmin, ymin, xmax, ymax = (np.array(box) * self.ratio).astype(int)
+            target1_boxes[0, ymin:ymax, xmin:xmax] = segid
             if track not in target3: continue
             next_track = target3[track]
             box = next_track

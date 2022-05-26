@@ -47,8 +47,8 @@ class Model2(nn.Module):
         kernel = torch.cat([w, kernel], dim=1)
 
         batch, n, channel = kernel.shape[:3]
-        x = x.transpose(0, 1)
-        x = x.reshape(1, channel*batch, x.size(2), x.size(3))  # 1 * (b*c) * k * k
+        # x = x.transpose(0, 1)
+        x = x.reshape(1, batch*channel, x.size(2), x.size(3))  # 1 * (b*c) * k * k
         kernel = kernel.reshape(batch*n, channel, 1, 1)  # (b*c) * 1 * H * W
         out = F.conv2d(x, kernel, groups=batch)
         out = out.reshape(batch, n, out.size(2), out.size(3))
