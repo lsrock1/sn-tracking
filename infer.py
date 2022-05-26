@@ -132,7 +132,7 @@ def make_txt(save_img=False, challenge=False, v2=False):
     device = 'cuda'
     if v2:
         model = V2Training()
-        model = model.load_from_checkpoint("lightning_logs/version_0/checkpoints/epoch=1-step=2670.ckpt", map_location=device)
+        model = model.load_from_checkpoint("lightning_logs/version_1/checkpoints/epoch=1-step=2670.ckpt", map_location=device)
     else:
         model = VTraining()
         model = model.load_from_checkpoint("lightning_logs/version_1/checkpoints/epoch=0-step=4744.ckpt", map_location=device)

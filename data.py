@@ -223,6 +223,7 @@ class TrainV2(Dataset):
 
         img1 = Image.open(img1).convert('RGB')
         img2 = Image.open(img2).convert('RGB')
+        target1_dict = target1
         target1 = sorted(target1.items(), key=lambda x: x[1][1] + x[1][3], reverse=True)
         target = torch.zeros(self.size + [2]).float()
         for track, box in target1:
@@ -237,7 +238,9 @@ class TrainV2(Dataset):
         target3, target4 = self.targets[selected_idx]
         img3 = Image.open(img3).convert('RGB')
         img4 = Image.open(img4).convert('RGB')
+        target3_dict = target3
         target3 = sorted(target3.items(), key=lambda x: x[1][1] + x[1][3], reverse=True)
+
         target_ = torch.zeros(self.size + [2]).float()
         for track, box in target3:
             if track not in target4: continue
@@ -256,8 +259,8 @@ class TrainV2(Dataset):
             box = [box[0], box[1], box[0] + box[2], box[1] + box[3]]
             xmin, ymin, xmax, ymax = (np.array(box) * self.ratio).astype(int)
             target3_boxes[0, ymin:ymax, xmin:xmax] = segid
-            if track not in target1: continue
-            next_track = target1[track]
+            if track not in target1_dict: continue
+            next_track = target1_dict[track]
             box = next_track
             # vector = [(next_track[0] - box[0]) / self.size_origin[1], (next_track[1] - box[1])/self.size_origin[0]]
             box = [box[0], box[1], box[0] + box[2], box[1] + box[3]]
@@ -273,8 +276,8 @@ class TrainV2(Dataset):
             box = [box[0], box[1], box[0] + box[2], box[1] + box[3]]
             xmin, ymin, xmax, ymax = (np.array(box) * self.ratio).astype(int)
             target1_boxes[0, ymin:ymax, xmin:xmax] = segid
-            if track not in target3: continue
-            next_track = target3[track]
+            if track not in target3_dict: continue
+            next_track = target3_dict[track]
             box = next_track
             # vector = [(next_track[0] - box[0]) / self.size_origin[1], (next_track[1] - box[1])/self.size_origin[0]]
             box = [box[0], box[1], box[0] + box[2], box[1] + box[3]]
