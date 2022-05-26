@@ -38,7 +38,7 @@ class V2Training(pl.LightningModule):
             feat2_vec.append((feat2 * mask).sum(dim=[2, 3], keepdim=True) / (mask.sum(dim=[2, 3],keepdim=True) + 1e-8))
         feat2_vec = torch.stack(feat2_vec, dim=1)
         # bs, n, c, 1, 1
-        feat_vec = torch.cat([feat1_vec, feat2_vec], dim=0)
+        feat_vec = torch.cat([feat2_vec, feat1_vec], dim=0)
         re_id = self.model.reid_run(feat, feat_vec)
         loss = F.mse_loss(pred, target, reduction='none')
         loss = loss[target != 0].sum() * self.weight + loss[target == 0].sum()
@@ -57,7 +57,7 @@ class V2Training(pl.LightningModule):
     def train_dataloader(self):
         data = TrainV2()
         # data_test = News('test')
-        dataloader = torch.utils.data.DataLoader(data, batch_size=9, shuffle=True, num_workers=8)
+        dataloader = torch.utils.data.DataLoader(data, batch_size=16, shuffle=True, num_workers=8)
         return dataloader
 
     # def val_dataloader(self):
@@ -68,7 +68,7 @@ if __name__ == '__main__':
     # init model
     model = V2Training()
 
-    trainer = pl.Trainer(accelerator="dp", gpus=3, num_sanity_val_steps=0, precision=16,
+    trainer = pl.Trainer(accelerator="dp", gpus=2, num_sanity_val_steps=0, precision=16,
         enable_checkpointing=True, accumulate_grad_batches=2, sync_batchnorm=True, max_epochs=20)
         # resume_from_checkpoint="lightning_logs/version_1/checkpoints/epoch=8-step=42696.ckpt")
     trainer.fit(model=model)
