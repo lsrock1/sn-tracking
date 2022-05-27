@@ -39,20 +39,29 @@ class Model2(nn.Module):
         self.classifier = model.classifier
         # copy aspp
         self.re_id = copy.deepcopy(self.classifier[0])
-        self.weight = nn.Parameter(torch.randn(1, 1, 256, 1, 1))
+        self.re_id.project[0] = nn.Conv2d(1280, 1024, kernel_size=1, stride=1, padding=0, bias=False)
+        self.re_id.project[1] = nn.BatchNorm2d(1024, 1024)
+        self.re_id.project[3] = nn.Conv2d(1024, 1024, kernel_size=1, stride=1, padding=0, bias=True)
+        self.weight = nn.Parameter(torch.randn(1, 1, 1024, 1, 1))
 
     def reid_run(self, x, kernel):
         bs, c, h, w = x.shape
+        # x = F.interpolate(x, size=(32, 57), mode="bilinear", align_corners=False)
         # bs, n+1, c
         background = self.weight.expand(kernel.shape[0], 1, -1, -1, -1)
         kernel = torch.cat([background, kernel], dim=1).reshape(bs, -1, c)
-
+        # print(x.reshape(bs, c, -1).transpose(1, 2)[..., None].shape)
         # bs, hw, c * bs, c, n+!
+        # seg_map = F.cosine_similarity(
+        #     x.reshape(bs, c, -1).transpose(1, 2)[..., None],
+        #     kernel.transpose(1, 2).unsqueeze(1), dim=2
+        # )
         seg_map = torch.bmm(
             x.reshape(bs, c, -1).transpose(1, 2),
-            kernel.transpose(1, 2))
+            kernel.transpose(1, 2)
+        )
         seg_map = seg_map.transpose(1, 2).reshape(bs, -1, h, w)
-
+        # seg_map = F.interpolate(seg_map, size=(h, w), mode="bilinear", align_corners=False)
         # batch, n, channel = kernel.shape[:3]
         # # x = x.transpose(0, 1)
         # x = x.reshape(1, batch*channel, x.size(2), x.size(3))  # 1 * (b*c) * k * k
@@ -71,9 +80,11 @@ class Model2(nn.Module):
         x = self.classifier(x)
         x = F.interpolate(x, size=input_shape, mode="bilinear", align_corners=False)
         result["out"] = x
-        x = self.re_id(features["out"])
-        x = F.interpolate(x, size=input_shape, mode="bilinear", align_corners=False)
 
+        x = self.re_id(features["out"])
+        # print(x.shape)
+        
+        # x = F.interpolate(x, size=input_shape, mode="bilinear", align_corners=False)
         result['feat'] = x
         return result
 

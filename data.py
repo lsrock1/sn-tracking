@@ -198,7 +198,9 @@ class TrainV2(Dataset):
         ])
         self.size_origin = (1080, 1920)
         self.size = [512, 910]
+        self.size_reid = [32, 57]
         self.ratio = self.size[0] / self.size_origin[0]
+        self.ratio_reid = self.size_reid[0] / self.size_origin[0]
         self.idx_by_video = defaultdict(list)
         self.video_by_idx = []
         # self.files = glob(os.path.join(root, '*.npy'))
@@ -220,6 +222,8 @@ class TrainV2(Dataset):
 
         video_idx = self.video_by_idx[index]
         idx = self.idx_by_video[video_idx]
+        idx = [i for i in idx if index - 10 < i < index + 10]
+        # print(index, ':', idx)
         selected_idx = np.random.choice(idx, 1)[0]
 
         img1 = Image.open(img1).convert('RGB')
@@ -252,38 +256,50 @@ class TrainV2(Dataset):
             xmin, ymin, xmax, ymax = (np.array(box) * self.ratio).astype(int)
             target_[ymin:ymax, xmin:xmax] = torch.from_numpy(np.array(vector))
 
-        target_reid1 = torch.zeros(self.size).float()
-        target3_boxes = torch.zeros([1] + self.size).float()
-        rand = np.random.choice(len(target3), 6, replace=True)
+        target_reid1 = torch.zeros(self.size_reid).float()
+        target3_boxes = torch.zeros([1] + self.size_reid).float() * -1
+        rand = np.random.choice(len(target3), 6, replace=True if len(target3) < 6 else False)
+
+        for track, box in target1:
+            box = [box[0], box[1], box[0] + box[2], box[1] + box[3]]
+            box = (np.array(box) * self.ratio_reid).astype(int)
+            target_reid1[box[1]:box[3], box[0]:box[2]] = 0
+
         for segid, rand_idx in enumerate(rand):
             track, box = target3[rand_idx]
             segid = segid + 1
             box = [box[0], box[1], box[0] + box[2], box[1] + box[3]]
-            xmin, ymin, xmax, ymax = (np.array(box) * self.ratio).astype(int)
+            xmin, ymin, xmax, ymax = (np.array(box) * self.ratio_reid).astype(int)
             target3_boxes[0, ymin:ymax, xmin:xmax] = segid
             if track not in target1_dict: continue
             next_track = target1_dict[track]
             box = next_track
             # vector = [(next_track[0] - box[0]) / self.size_origin[1], (next_track[1] - box[1])/self.size_origin[0]]
             box = [box[0], box[1], box[0] + box[2], box[1] + box[3]]
-            xmin, ymin, xmax, ymax = (np.array(box) * self.ratio).astype(int)
+            xmin, ymin, xmax, ymax = (np.array(box) * self.ratio_reid).astype(int)
             target_reid1[ymin:ymax, xmin:xmax] = segid
 
-        target_reid2 = torch.zeros(self.size).float()
-        target1_boxes = torch.zeros([1] + self.size).float()
-        rand = np.random.choice(len(target1), 6, replace=True)
+        target_reid2 = torch.zeros(self.size_reid).float()
+        target1_boxes = torch.zeros([1] + self.size_reid).float() * -1
+        rand = np.random.choice(len(target1), 6, replace=True if len(target1) < 6 else False)
+
+        for track, box in target3:
+            box = [box[0], box[1], box[0] + box[2], box[1] + box[3]]
+            box = (np.array(box) * self.ratio_reid).astype(int)
+            target_reid2[box[1]:box[3], box[0]:box[2]] = 0
+
         for segid, rand_idx in enumerate(rand):
             track, box = target1[rand_idx]
             segid = segid + 1
             box = [box[0], box[1], box[0] + box[2], box[1] + box[3]]
-            xmin, ymin, xmax, ymax = (np.array(box) * self.ratio).astype(int)
+            xmin, ymin, xmax, ymax = (np.array(box) * self.ratio_reid).astype(int)
             target1_boxes[0, ymin:ymax, xmin:xmax] = segid
             if track not in target3_dict: continue
             next_track = target3_dict[track]
             box = next_track
             # vector = [(next_track[0] - box[0]) / self.size_origin[1], (next_track[1] - box[1])/self.size_origin[0]]
             box = [box[0], box[1], box[0] + box[2], box[1] + box[3]]
-            xmin, ymin, xmax, ymax = (np.array(box) * self.ratio).astype(int)
+            xmin, ymin, xmax, ymax = (np.array(box) * self.ratio_reid).astype(int)
             target_reid2[ymin:ymax, xmin:xmax] = segid
 
         if self.transform:

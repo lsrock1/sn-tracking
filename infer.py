@@ -131,7 +131,7 @@ def compute_movements(v, current_boxes):
 def make_txt(save_img=False, challenge=False, v2=False):
     device = 'cuda'
     model_re = V2Training()
-    model_re = model_re.load_from_checkpoint("lightning_logs/version_4/checkpoints/epoch=1-step=5338.ckpt", map_location=device)
+    model_re = model_re.load_from_checkpoint("lightning_logs/version_15/checkpoints/epoch=0-step=2669.ckpt", map_location=device)
     model = VTraining()
     model = model.load_from_checkpoint("saved_32/version_2/checkpoints/epoch=31-step=75904.ckpt", map_location=device)
     # model = get_model()
@@ -172,7 +172,8 @@ def make_txt(save_img=False, challenge=False, v2=False):
         outputs['feat'] = model_re(names)['feat']
         vectors = outputs['out']
         vectors = F.interpolate(vectors, size=(1080, 1920), mode='bilinear', align_corners=True)
-        outputs['feat'] = F.interpolate(outputs['feat'], size=(1080, 1920), mode='bilinear', align_corners=True)
+        small_ratio = 32/1080
+        # outputs['feat'] = F.interpolate(outputs['feat'], size=(1080, 1920), mode='bilinear', align_corners=True)
         # print(vectors.shape)
         
         for batch_idx, (v, i) in enumerate(zip(vectors, index)):
@@ -220,7 +221,8 @@ def make_txt(save_img=False, challenge=False, v2=False):
                 if 'feat' in outputs:
                     # print(outputs['feat'])
                     # print(current_boxes[0])
-                    features += [[outputs['feat'][batch_idx:batch_idx+1, :, b[1]:b[3], b[0]:b[2]].mean(dim=[2, 3], keepdim=True).cpu()] for bid, b in enumerate(current_boxes)]
+                    small_box = [(np.array(b) * small_ratio).astype(int) for b in current_boxes]
+                    features += [[outputs['feat'][batch_idx:batch_idx+1, :, b[1]:b[3], b[0]:b[2]].mean(dim=[2, 3], keepdim=True).cpu()] for b in small_box]
                     # print(features[0][0].shape)
             
             moved_boxes = current_boxes + movement_boxes
@@ -275,6 +277,8 @@ def make_txt(save_img=False, challenge=False, v2=False):
                     # frame_check = np.array(deactivated_trackers_frames)[:, None] < np.array(unmatched_trackers_frames)[None, :]
 
                     for c, box in enumerate(unmatched_trackers_boxes):
+                        box = np.array(box) * small_ratio
+                        box = box.astype(int)
                         matching = F.softmax(reid_map[0, :, box[1]:box[3], box[0]:box[2]], dim=0).mean(dim=[1, 2]).numpy()
                         re_id_matching.append(matching)
                     # box, tracker -> tracker, box
@@ -378,8 +382,9 @@ def make_txt(save_img=False, challenge=False, v2=False):
                     trackers[idx].append(
                         [frame_num] + selected_box + [matched_indices[trk[-1]]])
                     if 'feat' in outputs:
+                        selected_box_small = [int(c * small_ratio) for c in selected_box]
                         features[idx].append(
-                            outputs['feat'][batch_idx:batch_idx+1, :, selected_box[1]:selected_box[3], selected_box[0]:selected_box[2]].sum(dim=[2, 3], keepdim=True).cpu() / ((selected_box[3] - selected_box[1]) * (selected_box[2] - selected_box[0]) + 1e-8))
+                            outputs['feat'][batch_idx:batch_idx+1, :, selected_box_small[1]:selected_box_small[3], selected_box_small[0]:selected_box_small[2]].sum(dim=[2, 3], keepdim=True).cpu() / ((selected_box_small[3] - selected_box_small[1]) * (selected_box_small[2] - selected_box_small[0]) + 1e-8))
                     if save_img:                    
                         img = cv2.rectangle(img, (selected_box[0], selected_box[1]), (selected_box[2], selected_box[3]), colors[idx], 5)
                 # else:
@@ -390,7 +395,8 @@ def make_txt(save_img=False, challenge=False, v2=False):
                 selected_box = next_boxes[det].tolist()
                 trackers.append([[frame_num] + selected_box + [det]])
                 if 'feat' in outputs:
-                    features.append([outputs['feat'][batch_idx:batch_idx+1, :, selected_box[1]:selected_box[3], selected_box[0]:selected_box[2]].sum(dim=[2, 3], keepdim=True).cpu() / ((selected_box[3] - selected_box[1]) * (selected_box[2] - selected_box[0]) + 1e-8)])
+                    selected_box_small = [int(c * small_ratio) for c in selected_box]
+                    features.append([outputs['feat'][batch_idx:batch_idx+1, :, selected_box_small[1]:selected_box_small[3], selected_box_small[0]:selected_box_small[2]].sum(dim=[2, 3], keepdim=True).cpu() / ((selected_box_small[3] - selected_box_small[1]) * (selected_box_small[2] - selected_box_small[0]) + 1e-8)])
                 if save_img:                    
                     img = cv2.rectangle(img, (selected_box[0], selected_box[1]), (selected_box[2], selected_box[3]), colors[len(trackers)-1], 5)
             
