@@ -25,14 +25,14 @@ class V2Training(pl.LightningModule):
         pred, feat = results['out'], results['feat']
         feat1, feat2 = feat[:feat.shape[0]//2], feat[feat.shape[0]//2:]
         feat1_vec = []
-        for b in range(1,5):
+        for b in range(1,7):
             mask = target1_boxes == b
             # bs, c
             feat1_vec.append((feat1 * mask).sum(dim=[2, 3], keepdim=True) / (mask.sum(dim=[2, 3], keepdim=True) + 1e-8))
         # bs, n, c, 1, 1
         feat1_vec = torch.stack(feat1_vec, dim=1)
         feat2_vec = []
-        for b in range(1,5):
+        for b in range(1,7):
             mask = target2_boxes == b
             # bs, c
             feat2_vec.append((feat2 * mask).sum(dim=[2, 3], keepdim=True) / (mask.sum(dim=[2, 3],keepdim=True) + 1e-8))
@@ -69,6 +69,6 @@ if __name__ == '__main__':
     model = V2Training()
 
     trainer = pl.Trainer(accelerator="dp", gpus=2, num_sanity_val_steps=0, precision=16,
-        enable_checkpointing=True, accumulate_grad_batches=2, sync_batchnorm=True, max_epochs=20)
+        enable_checkpointing=True, accumulate_grad_batches=1, sync_batchnorm=True, max_epochs=20)
         # resume_from_checkpoint="lightning_logs/version_1/checkpoints/epoch=8-step=42696.ckpt")
     trainer.fit(model=model)

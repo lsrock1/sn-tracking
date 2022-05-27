@@ -210,11 +210,12 @@ class TrainV2(Dataset):
                     self.data.append([i, next_img])
                     self.targets.append([
                         gt[int(i.split('/')[-1].split('.')[0])], gt[int(next_img.split('/')[-1].split('.')[0])]])
-                    self.idx_by_video[folder_idx] = len(self.data) - 1
+                    self.idx_by_video[folder_idx].append(len(self.data) - 1)
                     self.video_by_idx.append(folder_idx)
 
     def __getitem__(self, index):
         img1, img2 = self.data[index]
+        img1_name = img1
         target1, target2 = self.targets[index]
 
         video_idx = self.video_by_idx[index]
@@ -238,6 +239,7 @@ class TrainV2(Dataset):
         target3, target4 = self.targets[selected_idx]
         img3 = Image.open(img3).convert('RGB')
         img4 = Image.open(img4).convert('RGB')
+        
         target3_dict = target3
         target3 = sorted(target3.items(), key=lambda x: x[1][1] + x[1][3], reverse=True)
 
@@ -252,7 +254,7 @@ class TrainV2(Dataset):
 
         target_reid1 = torch.zeros(self.size).float()
         target3_boxes = torch.zeros([1] + self.size).float()
-        rand = np.random.choice(len(target3), 4, replace=False)
+        rand = np.random.choice(len(target3), 6, replace=True)
         for segid, rand_idx in enumerate(rand):
             track, box = target3[rand_idx]
             segid = segid + 1
@@ -269,7 +271,7 @@ class TrainV2(Dataset):
 
         target_reid2 = torch.zeros(self.size).float()
         target1_boxes = torch.zeros([1] + self.size).float()
-        rand = np.random.choice(len(target1), 4, replace=False)
+        rand = np.random.choice(len(target1), 6, replace=True)
         for segid, rand_idx in enumerate(rand):
             track, box = target1[rand_idx]
             segid = segid + 1

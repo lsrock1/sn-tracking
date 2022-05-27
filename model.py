@@ -42,17 +42,24 @@ class Model2(nn.Module):
         self.weight = nn.Parameter(torch.randn(1, 1, 256, 1, 1))
 
     def reid_run(self, x, kernel):
-        # bs, n+1, c, 1, 1
-        w = self.weight.expand(kernel.shape[0], 1, -1, -1, -1)
-        kernel = torch.cat([w, kernel], dim=1)
+        bs, c, h, w = x.shape
+        # bs, n+1, c
+        background = self.weight.expand(kernel.shape[0], 1, -1, -1, -1)
+        kernel = torch.cat([background, kernel], dim=1).reshape(bs, -1, c)
 
-        batch, n, channel = kernel.shape[:3]
-        # x = x.transpose(0, 1)
-        x = x.reshape(1, batch*channel, x.size(2), x.size(3))  # 1 * (b*c) * k * k
-        kernel = kernel.reshape(batch*n, channel, 1, 1)  # (b*c) * 1 * H * W
-        out = F.conv2d(x, kernel, groups=batch)
-        out = out.reshape(batch, n, out.size(2), out.size(3))
-        return out
+        # bs, hw, c * bs, c, n+!
+        seg_map = torch.bmm(
+            x.reshape(bs, c, -1).transpose(1, 2),
+            kernel.transpose(1, 2))
+        seg_map = seg_map.transpose(1, 2).reshape(bs, -1, h, w)
+
+        # batch, n, channel = kernel.shape[:3]
+        # # x = x.transpose(0, 1)
+        # x = x.reshape(1, batch*channel, x.size(2), x.size(3))  # 1 * (b*c) * k * k
+        # kernel = kernel.reshape(batch*n, channel, 1, 1)  # (b*c) * 1 * H * W
+        # out = F.conv2d(x, kernel, groups=batch)
+        # out = out.reshape(batch, n, out.size(2), out.size(3))
+        return seg_map
 
     def forward(self, x):
         input_shape = x.shape[-2:]

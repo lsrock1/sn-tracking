@@ -130,14 +130,15 @@ def compute_movements(v, current_boxes):
 @torch.no_grad()
 def make_txt(save_img=False, challenge=False, v2=False):
     device = 'cuda'
-    if v2:
-        model = V2Training()
-        model = model.load_from_checkpoint("lightning_logs/version_1/checkpoints/epoch=1-step=2670.ckpt", map_location=device)
-    else:
-        model = VTraining()
-        model = model.load_from_checkpoint("lightning_logs/version_1/checkpoints/epoch=0-step=4744.ckpt", map_location=device)
+    model_re = V2Training()
+    model_re = model_re.load_from_checkpoint("lightning_logs/version_4/checkpoints/epoch=1-step=5338.ckpt", map_location=device)
+    model = VTraining()
+    model = model.load_from_checkpoint("saved_32/version_2/checkpoints/epoch=31-step=75904.ckpt", map_location=device)
     # model = get_model()
     device = torch.device(device)
+    model_re.to(device)
+    model_re.eval()
+    model_re.freeze()
     model.to(device)
     model.eval()
     model.freeze()
@@ -168,6 +169,7 @@ def make_txt(save_img=False, challenge=False, v2=False):
         names = names.to(device)
         # target = target.cuda()
         outputs = model(names)
+        outputs['feat'] = model_re(names)['feat']
         vectors = outputs['out']
         vectors = F.interpolate(vectors, size=(1080, 1920), mode='bilinear', align_corners=True)
         outputs['feat'] = F.interpolate(outputs['feat'], size=(1080, 1920), mode='bilinear', align_corners=True)
@@ -265,7 +267,7 @@ def make_txt(save_img=False, challenge=False, v2=False):
                 if len(deactivated_trackers_ids) > 0 and len(unmatched_trackers_ids) > 0:
                     # print(len(deactivated_trackers_features))
                     # print(torch.stack(deactivated_trackers_features, dim=1).shape)
-                    reid_map = model.model.reid_run(outputs['feat'][batch_idx:batch_idx+1], torch.stack(deactivated_trackers_features, dim=1).to(device))
+                    reid_map = model_re.model.reid_run(outputs['feat'][batch_idx:batch_idx+1], torch.stack(deactivated_trackers_features, dim=1).to(device))
                     reid_map = reid_map.cpu()
 
                     re_id_matching = []
@@ -377,7 +379,7 @@ def make_txt(save_img=False, challenge=False, v2=False):
                         [frame_num] + selected_box + [matched_indices[trk[-1]]])
                     if 'feat' in outputs:
                         features[idx].append(
-                            outputs['feat'][batch_idx:batch_idx+1, :, selected_box[1]:selected_box[3], selected_box[0]:selected_box[2]].mean(dim=[2, 3], keepdim=True).cpu())
+                            outputs['feat'][batch_idx:batch_idx+1, :, selected_box[1]:selected_box[3], selected_box[0]:selected_box[2]].sum(dim=[2, 3], keepdim=True).cpu() / ((selected_box[3] - selected_box[1]) * (selected_box[2] - selected_box[0]) + 1e-8))
                     if save_img:                    
                         img = cv2.rectangle(img, (selected_box[0], selected_box[1]), (selected_box[2], selected_box[3]), colors[idx], 5)
                 # else:
@@ -388,7 +390,7 @@ def make_txt(save_img=False, challenge=False, v2=False):
                 selected_box = next_boxes[det].tolist()
                 trackers.append([[frame_num] + selected_box + [det]])
                 if 'feat' in outputs:
-                    features.append([outputs['feat'][batch_idx:batch_idx+1, :, selected_box[1]:selected_box[3], selected_box[0]:selected_box[2]].mean(dim=[2, 3], keepdim=True).cpu()])
+                    features.append([outputs['feat'][batch_idx:batch_idx+1, :, selected_box[1]:selected_box[3], selected_box[0]:selected_box[2]].sum(dim=[2, 3], keepdim=True).cpu() / ((selected_box[3] - selected_box[1]) * (selected_box[2] - selected_box[0]) + 1e-8)])
                 if save_img:                    
                     img = cv2.rectangle(img, (selected_box[0], selected_box[1]), (selected_box[2], selected_box[3]), colors[len(trackers)-1], 5)
             
