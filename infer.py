@@ -11,9 +11,34 @@ from glob import glob
 
 import torch
 import torch.nn.functional as F
+from torch import nn
+from torchvision import transforms
 
 import random
-from PIL import ImageColor
+from PIL import ImageColor, Image
+import sys
+from reid import ft_net_swin
+
+
+def transform_v2(image, box):
+    image = image[box[1]: box[3], box[0]: box[2]]
+    image = Image.fromarray(image)
+    data_transforms = transforms.Compose([
+        transforms.Resize((224, 224), interpolation=3),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        ############### Ten Crop        
+        #transforms.TenCrop(224),
+        #transforms.Lambda(lambda crops: torch.stack(
+         #   [transforms.ToTensor()(crop) 
+          #      for crop in crops]
+           # )),
+        #transforms.Lambda(lambda crops: torch.stack(
+         #   [transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])(crop)
+          #       for crop in crops]
+          # ))
+    ])
+    return data_transforms(image).unsqueeze(0).cuda()
 
 
 def ball_processing(trackers):
@@ -130,15 +155,10 @@ def compute_movements(v, current_boxes):
 @torch.no_grad()
 def make_txt(save_img=False, challenge=False, v2=False):
     device = 'cuda'
-    model_re = V2Training()
-    model_re = model_re.load_from_checkpoint("lightning_logs/version_15/checkpoints/epoch=0-step=2669.ckpt", map_location=device)
     model = VTraining()
     model = model.load_from_checkpoint("saved_32/version_2/checkpoints/epoch=31-step=75904.ckpt", map_location=device)
-    # model = get_model()
+
     device = torch.device(device)
-    model_re.to(device)
-    model_re.eval()
-    model_re.freeze()
     model.to(device)
     model.eval()
     model.freeze()
@@ -150,9 +170,10 @@ def make_txt(save_img=False, challenge=False, v2=False):
         folder_name = 'challenge_results'
     batch_size = 1
     dataloader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=False, num_workers=8)
-
+    h, w = 256, 128
     trackers = []
     features = []
+    pre_extracted_features = None
     frame_num = 1
     prev_name = ''
     no_c = 0
@@ -165,17 +186,13 @@ def make_txt(save_img=False, challenge=False, v2=False):
     colors = get_colors(300)
     colors = [ImageColor.getcolor(c, "RGB") for c in colors]
 
-    for idx, (names, target, index) in enumerate(dataloader):
+    for idx, (names, target, index, origin) in enumerate(dataloader):
         names = names.to(device)
-        # target = target.cuda()
         outputs = model(names)
-        outputs['feat'] = model_re(names)['feat']
         vectors = outputs['out']
         vectors = F.interpolate(vectors, size=(1080, 1920), mode='bilinear', align_corners=True)
-        small_ratio = 32/1080
-        # outputs['feat'] = F.interpolate(outputs['feat'], size=(1080, 1920), mode='bilinear', align_corners=True)
-        # print(vectors.shape)
         
+        origin = origin.numpy().astype(np.uint8)
         for batch_idx, (v, i) in enumerate(zip(vectors, index)):
             frame_num += 1
             current, next_ = data.get_box(i.item())
@@ -193,7 +210,12 @@ def make_txt(save_img=False, challenge=False, v2=False):
             img_path = oimg_path.replace('tracking', 'infer')
             if save_img:
                 img = cv2.imread(oimg_path)
-            img_num = int(img_path.split('/')[-1].split('.')[0])
+            # print(img_path.split('/')[-3])
+            video_num = int(img_path.split('/')[-3].split('-')[1])
+            img_num = int(img_path.split('/')[-1].split('.')[0])-2
+
+            if video_num <= 130:
+                continue
             # if '-198' not in img_path: continue
             # print(img_path)
             if not os.path.exists(os.path.dirname(img_path)):
@@ -212,18 +234,21 @@ def make_txt(save_img=False, challenge=False, v2=False):
                     print(no_m)
                     no_c = 0
                     no_m = 0
-                    # return
+                
+                phase = 'challenge' if challenge else 'test'
+                folder = f'../data/tracking/{phase}/{fname}'
                 prev_name = img_path.split('/')[-3]
+                print(f'{folder}/det_feats.npy')
+                pre_extracted_features = np.load(f'{folder}/det_feats.npy', allow_pickle=True)
                 trackers = []
                 features = []
                 trackers += [[[1] + b.tolist() + [bid]] for bid, b in enumerate(current_boxes)]
                 frame_num = 2
-                if 'feat' in outputs:
-                    # print(outputs['feat'])
-                    # print(current_boxes[0])
-                    small_box = [(np.array(b) * small_ratio).astype(int) for b in current_boxes]
-                    features += [[outputs['feat'][batch_idx:batch_idx+1, :, b[1]:b[3], b[0]:b[2]].mean(dim=[2, 3], keepdim=True).cpu()] for b in small_box]
-                    # print(features[0][0].shape)
+                if v2:
+                    for box in current_boxes:
+                        features += [[
+                            pre_extracted_features[img_num][tuple(box)]
+                        ]]
             
             moved_boxes = current_boxes + movement_boxes
 
@@ -240,14 +265,12 @@ def make_txt(save_img=False, challenge=False, v2=False):
             unmatched_detections = []
             unmatched_trackers = []
 
-            
-
             # prev matching reorder by re-id
-            if 'feat' in outputs and frame_num > 2:
+            if v2 and frame_num > 2:
                 deactivated_trackers_ids = []
                 unmatched_trackers_ids = []
                 deactivated_trackers_features = []
-                unmatched_trackers_boxes = []
+                unmatched_trackers_features = []
                 deactivated_trackers_frames = []
                 unmatched_trackers_frames = []
                 for t, tr in enumerate(trackers):
@@ -263,31 +286,16 @@ def make_txt(save_img=False, challenge=False, v2=False):
                     # at least 5 frames
                     elif tr[-1][0] == frame_num - 1 and len(tr) == 5 and tr[0][0] != 1:
                         unmatched_trackers_ids.append(t)
-                        unmatched_trackers_boxes.append(tr[-1][1:-1])
+                        unmatched_trackers_features.append(features[t][len(features[t])//2])
+                        # unmatched_trackers_boxes.append(tr[-1][1:-1])
                         unmatched_trackers_frames.append(tr[0][0])
                         # unmatched_trackers_features.append(features[t][len(features[t])//2])
                 if len(deactivated_trackers_ids) > 0 and len(unmatched_trackers_ids) > 0:
-                    # print(len(deactivated_trackers_features))
-                    # print(torch.stack(deactivated_trackers_features, dim=1).shape)
-                    reid_map = model_re.model.reid_run(outputs['feat'][batch_idx:batch_idx+1], torch.stack(deactivated_trackers_features, dim=1).to(device))
-                    reid_map = reid_map.cpu()
+                    deactivated_trackers_features = np.stack(deactivated_trackers_features, axis=0)
+                    unmatched_trackers_features = np.stack(unmatched_trackers_features, axis=0)
+                    reid_map = np.dot(deactivated_trackers_features, unmatched_trackers_features.T)
 
-                    re_id_matching = []
-                    
-                    # frame_check = np.array(deactivated_trackers_frames)[:, None] < np.array(unmatched_trackers_frames)[None, :]
-
-                    for c, box in enumerate(unmatched_trackers_boxes):
-                        box = np.array(box) * small_ratio
-                        box = box.astype(int)
-                        matching = F.softmax(reid_map[0, :, box[1]:box[3], box[0]:box[2]], dim=0).mean(dim=[1, 2]).numpy()
-                        re_id_matching.append(matching)
-                    # box, tracker -> tracker, box
-                    re_id_matching = np.array(re_id_matching).T
-                    # print(len(deactivated_trackers_ids))
-                    # print(len(unmatched_trackers_ids))
-                    # print(re_id_matching.shape)
-                    print(re_id_matching)
-                    matched_idx = linear_assignment(-re_id_matching)
+                    matched_idx = linear_assignment(-reid_map)
                         # max_value = np.max(matching)
                         # max_index = np.argmax(matching)
                         # print(max_index, max_value)
@@ -295,8 +303,9 @@ def make_txt(save_img=False, challenge=False, v2=False):
                         #     re_id_matching.append([max_index-1, c])
                     filtered_matched_idx = []
                     for m in matched_idx:
-                        if m[0] > 0 and deactivated_trackers_frames[m[0]-1] < unmatched_trackers_frames[m[1]] and re_id_matching[m[0], m[1]] > 0.:
-                            filtered_matched_idx.append([m[0]-1, m[1]])
+                        if deactivated_trackers_frames[m[0]-1] < unmatched_trackers_frames[m[1]] and reid_map[m[0], m[1]] > 0.7:
+                            print('merge: {} {} {}'.format(m[0], m[1], reid_map[m[0], m[1]]))
+                            filtered_matched_idx.append([m[0], m[1]])
                     for m in filtered_matched_idx:
                         tracker_id = deactivated_trackers_ids[m[0]]
                         box_id = unmatched_trackers_ids[m[1]]
@@ -381,10 +390,9 @@ def make_txt(save_img=False, challenge=False, v2=False):
                     selected_box = next_boxes[matched_indices[trk[-1]]].tolist()
                     trackers[idx].append(
                         [frame_num] + selected_box + [matched_indices[trk[-1]]])
-                    if 'feat' in outputs:
-                        selected_box_small = [int(c * small_ratio) for c in selected_box]
+                    if v2:
                         features[idx].append(
-                            outputs['feat'][batch_idx:batch_idx+1, :, selected_box_small[1]:selected_box_small[3], selected_box_small[0]:selected_box_small[2]].sum(dim=[2, 3], keepdim=True).cpu() / ((selected_box_small[3] - selected_box_small[1]) * (selected_box_small[2] - selected_box_small[0]) + 1e-8))
+                            pre_extracted_features[img_num+1][tuple(selected_box)])
                     if save_img:                    
                         img = cv2.rectangle(img, (selected_box[0], selected_box[1]), (selected_box[2], selected_box[3]), colors[idx], 5)
                 # else:
@@ -394,15 +402,15 @@ def make_txt(save_img=False, challenge=False, v2=False):
             for det in unmatched_detections:
                 selected_box = next_boxes[det].tolist()
                 trackers.append([[frame_num] + selected_box + [det]])
-                if 'feat' in outputs:
-                    selected_box_small = [int(c * small_ratio) for c in selected_box]
-                    features.append([outputs['feat'][batch_idx:batch_idx+1, :, selected_box_small[1]:selected_box_small[3], selected_box_small[0]:selected_box_small[2]].sum(dim=[2, 3], keepdim=True).cpu() / ((selected_box_small[3] - selected_box_small[1]) * (selected_box_small[2] - selected_box_small[0]) + 1e-8)])
+                if v2:
+                    features.append(
+                            [pre_extracted_features[img_num+1][tuple(selected_box)]])
                 if save_img:                    
                     img = cv2.rectangle(img, (selected_box[0], selected_box[1]), (selected_box[2], selected_box[3]), colors[len(trackers)-1], 5)
             
-            print('='*5)
-            for i in trackers:
-                print(i[0][0], i[-1][0])
+            # print('='*5)
+            # for i in trackers:
+            #     print(i[0][0], i[-1][0])
 
 
             no_c += len(unmatched_detections)

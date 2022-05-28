@@ -102,14 +102,15 @@ class Test(Dataset):
             xmin, ymin, xmax, ymax = (np.array(box) * self.ratio).astype(int)
             target[xmin:xmax, ymin:ymax] = torch.from_numpy(np.array(vector))
 
+        img_origin = img1
+
         if self.transform:
             img1 = self.transform(img1)
             img2 = self.transform(img2)
         img = torch.cat([img1, img2], dim=0)
 
-        
 
-        return img, target.permute(2, 0, 1), index
+        return img, target.permute(2, 0, 1), index, np.array(img_origin)
 
     def get_box(self, index):
         target1, target2 = self.targets[index]
@@ -163,13 +164,13 @@ class Challenge(Dataset):
         #     box = [box[0], box[1], box[0] + box[2], box[1] + box[3]]
         #     xmin, ymin, xmax, ymax = (np.array(box) * self.ratio).astype(int)
         #     target[xmin:xmax, ymin:ymax] = torch.from_numpy(np.array(vector))
-
+        origin = img1
         if self.transform:
             img1 = self.transform(img1)
             img2 = self.transform(img2)
         img = torch.cat([img1, img2], dim=0)
 
-        return img, torch.zeros(1), index
+        return img, torch.zeros(1), index, origin
 
     def get_box(self, index):
         target1, target2 = self.targets[index]
