@@ -191,6 +191,8 @@ class ft_net_dense(nn.Module):
         x = self.model.features(x)
         x = x.view(x.size(0), x.size(1))
         x = self.classifier(x)
+        if not self.training:
+            x = F.normalize(x, p=2, dim=1)
         return x
 
 # Define the Efficient-b4-based Model

@@ -66,6 +66,7 @@ class Train(Dataset):
 class Test(Dataset):
     def __init__(self,):
         self.folders = glob(os.path.join('../data/tracking/test', '*'))
+        # self.folders = [f for f in self.folders if int(f.split('/')[-1].split('-')[-1]) > 141]
         self.data = []
         self.targets = []
         self.transform = transforms.Compose([
@@ -110,7 +111,7 @@ class Test(Dataset):
         img = torch.cat([img1, img2], dim=0)
 
 
-        return img, target.permute(2, 0, 1), index, np.array(img_origin)
+        return img, target.permute(2, 0, 1), index
 
     def get_box(self, index):
         target1, target2 = self.targets[index]
@@ -129,6 +130,7 @@ class Test(Dataset):
 class Challenge(Dataset):
     def __init__(self,):
         self.folders = glob(os.path.join('../data/tracking/challenge', '*'))
+        self.folders = sorted(self.folders, key=lambda x: int(x.split('/')[-1].split('-')[-1]))
         self.data = []
         self.targets = []
         self.transform = transforms.Compose([
@@ -170,7 +172,7 @@ class Challenge(Dataset):
             img2 = self.transform(img2)
         img = torch.cat([img1, img2], dim=0)
 
-        return img, torch.zeros(1), index, origin
+        return img, torch.zeros(1), index
 
     def get_box(self, index):
         target1, target2 = self.targets[index]
