@@ -83,6 +83,60 @@ def ball_processing(trackers):
     return new_trackers
 
 
+def merge_with_reid(trackers, features):
+    ball_trackers = []
+    final_trackers = []
+    final_features = []
+    tracker_feature_zip = list(zip(trackers, features))
+
+    except_ball_trackers = []
+    # except ball tracker
+    for t, f in tracker_feature_zip:
+        if all([b[3] - b[1] < ball_size and b[4] - b[2] < ball_size for b in t]):
+            ball_trackers.append(t)
+        else:
+            except_ball_trackers.append((t, np.mean(np.stack(f, axis=0), axis=0)))
+    
+    dict_by_start_time = defaultdict(list)
+    for t, f in except_ball_trackers:
+        dict_by_start_time[t[0][0]].append((t, f))
+
+    sorted_by_start_time = sorted(dict_by_start_time.items(), key=lambda x: x[0])
+    sorted_by_start_time = [(t, list(zip(*f))) for t, f in sorted_by_start_time]
+
+    for start_frame, (trs, fts) in sorted_by_start_time:
+        if len(final_trackers) == 0:
+            for tr in trs:
+                final_trackers.append(tr)
+            for ft in fts:
+                final_features.append(ft)
+        else:
+            tr_fts = np.stack(final_features, axis=0)
+            fts = np.stack(fts, axis=0)
+            relation = np.dot(tr_fts, fts.T)
+            for fidx, final_tracker in enumerate(final_trackers):
+                for tidx, tr in enumerate(trs):
+                    diff = abs(tr[0][0] - final_tracker[-1][0])
+                    move = average_move(final_tracker)
+                    final_center = (final_tracker[-1][2] + final_tracker[-1][4]) / 2
+                    tr_center = (tr[0][2] + tr[0][4]) / 2
+                    if final_tracker[-1][0] >= tr[0][0] or not (final_center - diff * move < tr_center < final_center + diff * move):
+                        relation[fidx, tidx] = -1
+            reid_map = linear_assignment(-relation)
+
+            matched = []
+            for x, y in reid_map:
+                if relation[x, y] > 0.7:
+                    final_trackers[x] += trs[y]
+                    final_features[x] = (final_features[x] +fts[y])/2
+                    matched.append(y)
+
+            for y in range(len(trs)):
+                if y not in matched:
+                    final_trackers.append(trs[y])
+                    final_features.append(fts[y])
+    return ball_trackers + final_trackers
+
 def write_results(filename, results):
     save_format = '{frame},{id},{x1},{y1},{w},{h},{s},-1,-1,-1\n'
     with open(filename, 'w') as f:
@@ -91,7 +145,7 @@ def write_results(filename, results):
             if len(bboxes) < 4: continue
             for box in bboxes:
                 f.write(save_format.format(frame=box[0], id=track_id, x1=box[1], y1=box[2], w=box[3] - box[1], h=box[4] - box[2], s=1))
-    
+
 
 def linear_assignment(cost_matrix):
     try:
@@ -227,7 +281,7 @@ def make_txt(save_img=False, challenge=False, v2=False):
                 if prev_name != '':
                     np.save(os.path.join(folder_name, prev_name + '.npy'), np.array(trackers))
                     trackers = ball_processing(trackers)
-                    
+                    trackers = merge_with_reid(trackers, features)
                     txt_path = '/'.join(img_path.split('/')[:-2]).replace(fname, prev_name)
                     write_results(f'{folder_name}/' + prev_name + '.txt', trackers)
                     print('write results to {}'.format(f'{folder_name}/' + prev_name + '.txt'))
@@ -273,60 +327,62 @@ def make_txt(save_img=False, challenge=False, v2=False):
             unmatched_trackers = []
 
             # prev matching reorder by re-id
-            if v2 and frame_num > 2:
-                deactivated_trackers_ids = []
-                unmatched_trackers_ids = []
-                deactivated_trackers_features = []
-                unmatched_trackers_features = []
-                deactivated_trackers_frames = []
-                unmatched_trackers_frames = []
-                deactivated_trackers_boxes = []
-                unmatched_trackers_boxes = []
-                for t, tr in enumerate(trackers):
-                    # tracker's frame number check 
-                    # print(tr[-1][0], frame_num)
-                    if all([(t[3] - t[1] < ball_size) and (t[4] - t[2] < ball_size) for t in tr]):
-                        # pass ball box
-                        pass
-                    elif tr[-1][0] < frame_num - 1 and len(tr) >= 5:
-                        center = (tr[-1][2] + tr[-1][4])/2
-                        am = average_move(tr)
-                        deactivated_trackers_ids.append(t)
-                        deactivated_trackers_features.append(features[t][len(features[t])//2])
-                        deactivated_trackers_frames.append(tr[-1][0])
-                        deactivated_trackers_boxes.append([center, am])
-                    # at least 5 frames
-                    elif tr[-1][0] == frame_num - 1 and len(tr) == 5 and tr[0][0] != 1:
-                        center = (tr[0][2] + tr[0][4])/2
-                        unmatched_trackers_ids.append(t)
-                        unmatched_trackers_features.append(features[t][len(features[t])//2])
-                        unmatched_trackers_frames.append(tr[0][0])
-                        unmatched_trackers_boxes.append(center)
-                        # unmatched_trackers_features.append(features[t][len(features[t])//2])
-                if len(deactivated_trackers_ids) > 0 and len(unmatched_trackers_ids) > 0:
-                    deactivated_trackers_features = np.stack(deactivated_trackers_features, axis=0)
-                    unmatched_trackers_features = np.stack(unmatched_trackers_features, axis=0)
-                    reid_map = np.dot(deactivated_trackers_features, unmatched_trackers_features.T)
+            # if v2 and frame_num > 2:
+            #     deactivated_trackers_ids = []
+            #     unmatched_trackers_ids = []
+            #     deactivated_trackers_features = []
+            #     unmatched_trackers_features = []
+            #     deactivated_trackers_frames = []
+            #     unmatched_trackers_frames = []
+            #     deactivated_trackers_boxes = []
+            #     unmatched_trackers_boxes = []
+            #     for t, tr in enumerate(trackers):
+            #         # tracker's frame number check 
+            #         # print(tr[-1][0], frame_num)
+            #         if all([(t[3] - t[1] < ball_size) and (t[4] - t[2] < ball_size) for t in tr]):
+            #             # pass ball box
+            #             pass
+            #         elif tr[-1][0] < frame_num - 1 and len(tr) >= 5:
+            #             center = (tr[-1][2] + tr[-1][4])/2
+            #             am = average_move(tr)
+            #             deactivated_trackers_ids.append(t)
+            #             deactivated_trackers_features.append(features[t][len(features[t])//2])
+            #             # deactivated_trackers_features.append(np.mean(np.stack(features[t], axis=0), axis=0))
+            #             deactivated_trackers_frames.append(tr[-1][0])
+            #             deactivated_trackers_boxes.append([center, am])
+            #         # at least 5 frames
+            #         elif tr[-1][0] == frame_num - 1 and len(tr) == 5 and tr[0][0] != 1:
+            #             center = (tr[0][2] + tr[0][4])/2
+            #             unmatched_trackers_ids.append(t)
+            #             unmatched_trackers_features.append(features[t][len(features[t])//2])
+            #             # unmatched_trackers_features.append(np.mean(np.stack(features[t], axis=0), axis=0))
+            #             unmatched_trackers_frames.append(tr[0][0])
+            #             unmatched_trackers_boxes.append(center)
+            #             # unmatched_trackers_features.append(features[t][len(features[t])//2])
+            #     if len(deactivated_trackers_ids) > 0 and len(unmatched_trackers_ids) > 0:
+            #         deactivated_trackers_features = np.stack(deactivated_trackers_features, axis=0)
+            #         unmatched_trackers_features = np.stack(unmatched_trackers_features, axis=0)
+            #         reid_map = np.dot(deactivated_trackers_features, unmatched_trackers_features.T)
 
-                    for de_idx, de_frame in enumerate(deactivated_trackers_frames):
-                        for un_idx, un_frame in enumerate(unmatched_trackers_frames):
-                            diff = abs(de_frame - un_frame)
-                            if de_frame > un_frame or un_frame - de_frame > 130 or\
-                              not (deactivated_trackers_boxes[de_idx][0] - deactivated_trackers_boxes[de_idx][1] * diff < unmatched_trackers_boxes[un_idx] < deactivated_trackers_boxes[de_idx][0] + deactivated_trackers_boxes[de_idx][1] * diff):
-                                reid_map[de_idx, un_idx] = -1
+            #         for de_idx, de_frame in enumerate(deactivated_trackers_frames):
+            #             for un_idx, un_frame in enumerate(unmatched_trackers_frames):
+            #                 diff = abs(de_frame - un_frame)
+            #                 if de_frame > un_frame or un_frame - de_frame > 250 or\
+            #                   not (deactivated_trackers_boxes[de_idx][0] - deactivated_trackers_boxes[de_idx][1] * diff < unmatched_trackers_boxes[un_idx] < deactivated_trackers_boxes[de_idx][0] + deactivated_trackers_boxes[de_idx][1] * diff):
+            #                     reid_map[de_idx, un_idx] = -1
 
-                    matched_idx = linear_assignment(-reid_map)
-                    filtered_matched_idx = []
-                    for m in matched_idx:
-                        if deactivated_trackers_frames[m[0]] < unmatched_trackers_frames[m[1]] and reid_map[m[0], m[1]] > 0.2:
-                            print('merge: {} {} {}'.format(m[0], m[1], reid_map[m[0], m[1]]))
-                            filtered_matched_idx.append([m[0], m[1]])
-                    for m in filtered_matched_idx:
-                        tracker_id = deactivated_trackers_ids[m[0]]
-                        box_id = unmatched_trackers_ids[m[1]]
-                        trackers[tracker_id] = trackers[tracker_id] + trackers[box_id]
-                        trackers[box_id] = []
-                    trackers = [tr for tr in trackers if len(tr) > 0]
+            #         matched_idx = linear_assignment(-reid_map)
+            #         filtered_matched_idx = []
+            #         for m in matched_idx:
+            #             if deactivated_trackers_frames[m[0]] < unmatched_trackers_frames[m[1]] and reid_map[m[0], m[1]] > 0.8:
+            #                 print('merge: {} {} {}'.format(m[0], m[1], reid_map[m[0], m[1]]))
+            #                 filtered_matched_idx.append([m[0], m[1]])
+            #         for m in filtered_matched_idx:
+            #             tracker_id = deactivated_trackers_ids[m[0]]
+            #             box_id = unmatched_trackers_ids[m[1]]
+            #             trackers[tracker_id] = trackers[tracker_id] + trackers[box_id]
+            #             trackers[box_id] = []
+            #         trackers = [tr for tr in trackers if len(tr) > 0]
 
             # IOU based matching
             matches = []
@@ -448,6 +504,7 @@ def make_txt(save_img=False, challenge=False, v2=False):
                 cv2.imwrite(img_path, img)
     np.save(os.path.join(folder_name, prev_name + '.npy'), np.array(trackers))
     trackers = ball_processing(trackers)
+    trackers = merge_with_reid(trackers, features)
     write_results(f'{folder_name}/' + prev_name + '.txt', trackers)
     print('write results to {}'.format(f'{folder_name}/' + prev_name + '.txt'))
             # print(trackers)
