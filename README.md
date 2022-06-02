@@ -1,6 +1,5 @@
 # sn-tracking
 
------------------------
 
 ## Directory structure
 ```bash
@@ -10,4 +9,11 @@
 |         ├── challenge/
 |         └── test/
 └── sn-tracking/ # empty directory because of license
+```
+
+## Preprocessing dataset
+
+```bash
+cd sn-tracking
+python pre.py
 ```
