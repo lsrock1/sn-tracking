@@ -1,5 +1,6 @@
 # sn-tracking
 
+CVPR2022 SoccerNet(ActivityNet) Tracking Challenge 4th solution on testset
 
 ## Directory structure
 ```bash
